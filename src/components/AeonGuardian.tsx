@@ -17,17 +17,43 @@ import {
 } from 'lucide-react';
 import { AuditRecord, RiskTier } from '../types';
 import { INITIAL_AUDIT_RECORDS } from '../data/mockData';
+import { useLanguage } from '../context/LanguageContext';
 
-export const AeonGuardian: React.FC = () => {
-  const [auditRecords, setAuditRecords] = useState<AuditRecord[]>(INITIAL_AUDIT_RECORDS);
+interface AeonGuardianProps {
+  auditRecords?: AuditRecord[];
+  onAddAuditRecord?: (record: AuditRecord) => void;
+  onOpenAuditLogsTab?: () => void;
+}
+
+export const AeonGuardian: React.FC<AeonGuardianProps> = ({
+  auditRecords: externalRecords,
+  onAddAuditRecord,
+  onOpenAuditLogsTab,
+}) => {
+  const { language } = useLanguage();
+  const isThai = language === 'th';
+
+  const [localRecords, setLocalRecords] = useState<AuditRecord[]>(INITIAL_AUDIT_RECORDS);
+  const auditRecords = externalRecords || localRecords;
+
   const [currentScopeOrders, setCurrentScopeOrders] = useState<number>(18);
   const [pendingStatus, setPendingStatus] = useState<
     'AWAITING' | 'APPROVED' | 'REJECTED' | 'FAIL_CLOSED'
   >('AWAITING');
   const [approverNotes, setApproverNotes] = useState<string>(
-    'Verified via active courier heatmap in Zone-04 and telemetry hash.'
+    isThai
+      ? 'ตรวจสอบความถูกต้องผ่านแผนที่ความหนาแน่นไรเดอร์ใน Zone-04 และรหัสแฮชโทรมาตรเรียบร้อยแล้ว'
+      : 'Verified via active courier heatmap in Zone-04 and telemetry hash.'
   );
   const [isTamperedSimulation, setIsTamperedSimulation] = useState<boolean>(false);
+
+  const appendRecord = (record: AuditRecord) => {
+    if (onAddAuditRecord) {
+      onAddAuditRecord(record);
+    } else {
+      setLocalRecords((prev) => [record, ...prev]);
+    }
+  };
 
   // Compute risk tier based on scope
   const computedRiskTier: RiskTier =
@@ -48,7 +74,9 @@ export const AeonGuardian: React.FC = () => {
         orderCount: currentScopeOrders,
         sourceZone: 'ZONE-A (Zone 04)',
         targetZone: 'ZONE-C (Zone 01)',
-        details: `Reassign ${currentScopeOrders} delivery orders from Zone A to Zone C courier pool.`,
+        details: isThai
+          ? `โอนย้ายคำสั่งซื้อจัดส่งจำนวน ${currentScopeOrders} รายการ จากโซน A ไปยังกลุ่มไรเดอร์โซน C`
+          : `Reassign ${currentScopeOrders} delivery orders from Zone A to Zone C courier pool.`,
       },
       humanDecision: {
         action: 'APPROVED',
@@ -60,7 +88,7 @@ export const AeonGuardian: React.FC = () => {
       cryptographicSignature: `sig_ed25519_${Math.random().toString(36).substr(2, 16)}`,
     };
 
-    setAuditRecords([newRecord, ...auditRecords]);
+    appendRecord(newRecord);
     setPendingStatus('APPROVED');
   };
 
@@ -77,19 +105,23 @@ export const AeonGuardian: React.FC = () => {
         orderCount: currentScopeOrders,
         sourceZone: 'ZONE-A',
         targetZone: 'ZONE-C',
-        details: `Reassign ${currentScopeOrders} delivery orders from Zone A to Zone C courier pool.`,
+        details: isThai
+          ? `โอนย้ายคำสั่งซื้อจัดส่งจำนวน ${currentScopeOrders} รายการ จากโซน A ไปยังกลุ่มไรเดอร์โซน C`
+          : `Reassign ${currentScopeOrders} delivery orders from Zone A to Zone C courier pool.`,
       },
       humanDecision: {
         action: 'REJECTED',
         approverId: 'usr_ops_lead_774',
         timestampIso: new Date().toISOString(),
-        note: 'Operator rejected: Zone C couriers are nearing capacity ceiling.',
+        note: isThai
+          ? 'ผู้ควบคุมปฏิเสธคำขอ: กองยานไรเดอร์ในโซน C กำลังเข้าใกล้ขีดจำกัดความจุสูงสุด'
+          : 'Operator rejected: Zone C couriers are nearing capacity ceiling.',
       },
       executionStatus: 'REJECTED_DROPPED',
       cryptographicSignature: `sig_ed25519_${Math.random().toString(36).substr(2, 16)}`,
     };
 
-    setAuditRecords([newRecord, ...auditRecords]);
+    appendRecord(newRecord);
     setPendingStatus('REJECTED');
   };
 
@@ -109,19 +141,23 @@ export const AeonGuardian: React.FC = () => {
         orderCount: 18,
         sourceZone: 'ZONE-A',
         targetZone: 'ZONE-C',
-        details: 'Telemetry hash signature validation failed. Invariant violated.',
+        details: isThai
+          ? 'การตรวจสอบลายเซ็นแฮชของข้อมูลโทรมาตรล้มเหลว ละเมิดกฎความปลอดภัยของระบบ'
+          : 'Telemetry hash signature validation failed. Invariant violated.',
       },
       humanDecision: {
         action: 'REJECTED',
         approverId: 'SYSTEM_FAIL_CLOSED_DAEMON',
         timestampIso: new Date().toISOString(),
-        note: 'FAIL-CLOSED: Cryptographic signature mismatch. All automated & advisory execution blocked.',
+        note: isThai
+          ? 'FAIL-CLOSED: รหัสแฮชไม่ตรงกัน ระบบระงับการดำเนินการอัตโนมัติและคำแนะนำทั้งหมดทันที'
+          : 'FAIL-CLOSED: Cryptographic signature mismatch. All automated & advisory execution blocked.',
       },
       executionStatus: 'FAIL_CLOSED_BLOCKED',
       cryptographicSignature: 'BLOCKED_INVALID_SIGNATURE',
     };
 
-    setAuditRecords([failRecord, ...auditRecords]);
+    appendRecord(failRecord);
   };
 
   const handleResetReview = () => {
@@ -131,18 +167,55 @@ export const AeonGuardian: React.FC = () => {
   };
 
   const pipelineStages = [
-    { title: '1. Evidence Validation', desc: 'SHA-256 telemetry hash check', done: !isTamperedSimulation, fail: isTamperedSimulation },
-    { title: '2. Policy Check', desc: 'Safety boundaries & order caps', done: !isTamperedSimulation, fail: isTamperedSimulation },
-    { title: '3. Risk Assessment', desc: `Classified as ${computedRiskTier} tier`, done: !isTamperedSimulation, fail: isTamperedSimulation },
     {
-      title: '4. Human Approval',
-      desc: pendingStatus === 'APPROVED' ? 'Approved by Operator' : pendingStatus === 'REJECTED' ? 'Rejected by Operator' : 'Awaiting Operator Sign-Off',
+      title: isThai ? '1. ตรวจสอบหลักฐาน' : '1. Evidence Validation',
+      desc: isThai ? 'ตรวจสอบแฮชโทรมาตร SHA-256' : 'SHA-256 telemetry hash check',
+      done: !isTamperedSimulation,
+      fail: isTamperedSimulation,
+    },
+    {
+      title: isThai ? '2. ตรวจสอบนโยบาย' : '2. Policy Check',
+      desc: isThai ? 'ขอบเขตความปลอดภัยและเพดานงาน' : 'Safety boundaries & order caps',
+      done: !isTamperedSimulation,
+      fail: isTamperedSimulation,
+    },
+    {
+      title: isThai ? '3. ประเมินความเสี่ยง' : '3. Risk Assessment',
+      desc: isThai ? `จัดอยู่ในระดับ ${computedRiskTier}` : `Classified as ${computedRiskTier} tier`,
+      done: !isTamperedSimulation,
+      fail: isTamperedSimulation,
+    },
+    {
+      title: isThai ? '4. การอนุมัติโดยมนุษย์' : '4. Human Approval',
+      desc:
+        pendingStatus === 'APPROVED'
+          ? isThai
+            ? 'อนุมัติโดยผู้ควบคุมแล้ว'
+            : 'Approved by Operator'
+          : pendingStatus === 'REJECTED'
+          ? isThai
+            ? 'ปฏิเสธโดยผู้ควบคุม'
+            : 'Rejected by Operator'
+          : isThai
+          ? 'รอการลงนามอนุมัติจากผู้ควบคุม'
+          : 'Awaiting Operator Sign-Off',
       active: pendingStatus === 'AWAITING',
       done: pendingStatus === 'APPROVED',
       fail: pendingStatus === 'REJECTED' || pendingStatus === 'FAIL_CLOSED',
     },
-    { title: '5. Execution Eligibility', desc: 'Ed25519 token issued', done: pendingStatus === 'APPROVED' },
-    { title: '6. Immutable Audit Record', desc: 'Append-only ledger commit', done: pendingStatus === 'APPROVED' || pendingStatus === 'REJECTED' || pendingStatus === 'FAIL_CLOSED' },
+    {
+      title: isThai ? '5. สิทธิ์การดำเนินการ' : '5. Execution Eligibility',
+      desc: isThai ? 'ออกโทเคน Ed25519 แล้ว' : 'Ed25519 token issued',
+      done: pendingStatus === 'APPROVED',
+    },
+    {
+      title: isThai ? '6. บันทึกสมุดบัญชีถาวร' : '6. Immutable Audit Record',
+      desc: isThai ? 'บันทึกเข้าสู่ AuditLogs ถาวร' : 'Append-only ledger commit',
+      done:
+        pendingStatus === 'APPROVED' ||
+        pendingStatus === 'REJECTED' ||
+        pendingStatus === 'FAIL_CLOSED',
+    },
   ];
 
   return (
@@ -152,19 +225,34 @@ export const AeonGuardian: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-cyan-400 font-mono text-xs font-semibold px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30">
-              CAPABILITY 04
+              {isThai ? 'ขีดความสามารถที่ 04' : 'CAPABILITY 04'}
             </span>
-            <h2 className="text-xl font-bold text-white tracking-tight">AI Governance & Human Approval (AEON Guardian)</h2>
+            <h2 className="text-xl font-bold text-white tracking-tight">
+              {isThai
+                ? 'การกำกับดูแล AI และการอนุมัติโดยมนุษย์ (AEON Guardian)'
+                : 'AI Governance & Human Approval (AEON Guardian)'}
+            </h2>
           </div>
           <p className="text-xs text-neutral-400 mt-1 max-w-3xl">
-            Zero-trust governance plane safeguarding operational stability. Enforces evidence validation, strict policy bounds, mandatory human-in-the-loop sign-off for consequential actions, fail-closed defaults, and tamper-evident auditing.
+            {isThai
+              ? 'ระบบกำกับดูแลแบบ Zero-Trust เพื่อปกป้องเสถียรภาพการปฏิบัติการ บังคับใช้การตรวจสอบหลักฐาน ขอบเขตนโยบาย การอนุมัติโดยมนุษย์ (Human-in-the-Loop) ระบบล็อกอัตโนมัติแบบ Fail-Closed และสมุดบันทึก Audit ถาวร'
+              : 'Zero-trust governance plane safeguarding operational stability. Enforces evidence validation, strict policy bounds, mandatory human-in-the-loop sign-off for consequential actions, fail-closed defaults, and tamper-evident auditing.'}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenAuditLogsTab && (
+            <button
+              onClick={onOpenAuditLogsTab}
+              className="px-3 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-mono text-xs flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>{isThai ? 'เปิดสมุดบันทึก AuditLogs แบบเต็ม' : 'Open Full AuditLogs'}</span>
+            </button>
+          )}
           <span className="px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>GUARDIAN ACTIVE</span>
+            <span>{isThai ? 'การ์เดียนทำงานปกติ' : 'GUARDIAN ACTIVE'}</span>
           </span>
         </div>
       </div>
@@ -174,40 +262,48 @@ export const AeonGuardian: React.FC = () => {
         <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
           <div className="flex items-center gap-2 text-cyan-400 font-mono text-xs font-bold">
             <FileKey className="w-4 h-4" />
-            <span>NO EVIDENCE → NO DECISION</span>
+            <span>{isThai ? 'ไม่มีหลักฐาน → ไม่มีการตัดสินใจ' : 'NO EVIDENCE → NO DECISION'}</span>
           </div>
           <p className="text-[11px] text-neutral-400 font-sans mt-1.5">
-            Unverified models or requests lacking cryptographically signed telemetry data are dropped at the edge gateway.
+            {isThai
+              ? 'คำขอที่ไม่มีข้อมูลโทรมาตรลงนามด้วยรหัสลับจะถูกปฏิเสธตั้งแต่ระดับเกตเวย์'
+              : 'Unverified models or requests lacking cryptographically signed telemetry data are dropped at the edge gateway.'}
           </p>
         </div>
 
         <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
           <div className="flex items-center gap-2 text-amber-400 font-mono text-xs font-bold">
             <UserCheck className="w-4 h-4" />
-            <span>HUMAN-IN-THE-LOOP</span>
+            <span>{isThai ? 'มนุษย์เป็นผู้ตัดสินใจสุดท้าย (HITL)' : 'HUMAN-IN-THE-LOOP'}</span>
           </div>
           <p className="text-[11px] text-neutral-400 font-sans mt-1.5">
-            Consequential actions (fleet redistribution, merchant window throttling) require explicit operator confirmation.
+            {isThai
+              ? 'การดำเนินการที่มีผลกระทบสูง (การเกลี่ยไรเดอร์ข้ามโซน, การปรับเวลาร้านค้า) ต้องได้รับการยืนยันจากผู้ควบคุมเสมอ'
+              : 'Consequential actions (fleet redistribution, merchant window throttling) require explicit operator confirmation.'}
           </p>
         </div>
 
         <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
           <div className="flex items-center gap-2 text-rose-400 font-mono text-xs font-bold">
             <ShieldAlert className="w-4 h-4" />
-            <span>FAIL-CLOSED</span>
+            <span>{isThai ? 'ปิดกั้นอัตโนมัติเมื่อผิดปกติ (FAIL-CLOSED)' : 'FAIL-CLOSED'}</span>
           </div>
           <p className="text-[11px] text-neutral-400 font-sans mt-1.5">
-            On network partitions, schema mismatch, or ambiguous telemetry, all AI mutations are blocked instantly.
+            {isThai
+              ? 'เมื่อเกิดปัญหาเครือข่าย โครงสร้างข้อมูลไม่ตรง หรือแฮชไม่ถูกต้อง คำสั่งเปลี่ยนแปลงจาก AI จะถูกบล็อกทันที'
+              : 'On network partitions, schema mismatch, or ambiguous telemetry, all AI mutations are blocked instantly.'}
           </p>
         </div>
 
         <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
           <div className="flex items-center gap-2 text-emerald-400 font-mono text-xs font-bold">
             <History className="w-4 h-4" />
-            <span>IMMUTABLE AUDIT</span>
+            <span>{isThai ? 'บันทึกตรวจสอบแก้ไขไม่ได้ (IMMUTABLE AUDIT)' : 'IMMUTABLE AUDIT'}</span>
           </div>
           <p className="text-[11px] text-neutral-400 font-sans mt-1.5">
-            Every recommendation, telemetry hash, human approval, and state change is appended to a Merkle audit ledger.
+            {isThai
+              ? 'ทุกข้อเสนอแนะ รหัสแฮช การอนุมัติของมนุษย์ และผลลัพธ์ จะถูกบันทึกต่อท้ายในสมุดบัญชี Merkle แบบอ่านอย่างเดียว'
+              : 'Every recommendation, telemetry hash, human approval, and state change is appended to a Merkle audit ledger.'}
           </p>
         </div>
       </div>
@@ -215,7 +311,7 @@ export const AeonGuardian: React.FC = () => {
       {/* 6-Stage Governance Pipeline Progress */}
       <div className="bg-neutral-900/80 border border-neutral-800 rounded-xl p-4">
         <div className="text-xs font-bold text-white uppercase font-mono tracking-wider mb-3">
-          AEON Guardian Ingestion Pipeline
+          {isThai ? 'ขั้นตอนการตรวจสอบของ AEON Guardian (6-Stage Pipeline)' : 'AEON Guardian Ingestion Pipeline'}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
           {pipelineStages.map((stage, idx) => (
@@ -258,7 +354,9 @@ export const AeonGuardian: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Lock className="w-4 h-4 text-cyan-400" />
                 <h3 className="text-sm font-bold text-white uppercase font-mono tracking-wider">
-                  Operational Recommendation Under Review
+                  {isThai
+                    ? 'ข้อเสนอแนะเชิงปฏิบัติการที่รอการตรวจสอบ'
+                    : 'Operational Recommendation Under Review'}
                 </h3>
               </div>
               <span
@@ -272,7 +370,12 @@ export const AeonGuardian: React.FC = () => {
                     : 'bg-neutral-800 text-neutral-400'
                 }`}
               >
-                STATUS: {pendingStatus === 'AWAITING' ? 'AWAITING HUMAN APPROVAL' : pendingStatus}
+                {isThai ? 'สถานะ: ' : 'STATUS: '}
+                {pendingStatus === 'AWAITING'
+                  ? isThai
+                    ? 'รอการอนุมัติจากผู้ควบคุม'
+                    : 'AWAITING HUMAN APPROVAL'
+                  : pendingStatus}
               </span>
             </div>
 
@@ -283,27 +386,38 @@ export const AeonGuardian: React.FC = () => {
                 <span>POLICY: POL-DYNAMIC-DISPATCH-SEC-09</span>
               </div>
               <div className="text-white text-sm font-sans font-semibold pt-1">
-                “Reassign <span className="text-cyan-400">{currentScopeOrders} delivery orders</span> from Zone A to Zone C courier pool.”
+                {isThai ? (
+                  <>
+                    “โอนย้ายคำสั่งซื้อจัดส่งจำนวน{' '}
+                    <span className="text-cyan-400">{currentScopeOrders} รายการ</span> จากโซน A
+                    ไปยังกลุ่มไรเดอร์โซน C”
+                  </>
+                ) : (
+                  <>
+                    “Reassign <span className="text-cyan-400">{currentScopeOrders} delivery orders</span>{' '}
+                    from Zone A to Zone C courier pool.”
+                  </>
+                )}
               </div>
 
               {/* Evidence Metrics */}
               <div className="mt-2 pt-2 border-t border-neutral-800 text-[11px] grid grid-cols-3 gap-2">
                 <div className="bg-neutral-900 p-2 rounded">
-                  <div className="text-neutral-500">Demand Delta</div>
+                  <div className="text-neutral-500">{isThai ? 'อุปสงค์ส่วนเกิน' : 'Demand Delta'}</div>
                   <div className="text-rose-400 font-bold mt-0.5">+42% Over</div>
                 </div>
                 <div className="bg-neutral-900 p-2 rounded">
-                  <div className="text-neutral-500">Courier Util</div>
+                  <div className="text-neutral-500">{isThai ? 'อัตราใช้งานไรเดอร์' : 'Courier Util'}</div>
                   <div className="text-amber-400 font-bold mt-0.5">96.2% Max</div>
                 </div>
                 <div className="bg-neutral-900 p-2 rounded">
-                  <div className="text-neutral-500">SLA Delay Risk</div>
+                  <div className="text-neutral-500">{isThai ? 'ความเสี่ยง SLA ล่าช้า' : 'SLA Delay Risk'}</div>
                   <div className="text-rose-300 font-bold mt-0.5">+14.2 min</div>
                 </div>
               </div>
 
               <div className="flex items-center justify-between text-[11px] pt-1 text-neutral-400">
-                <span>Calculated Risk Tier:</span>
+                <span>{isThai ? 'ระดับความเสี่ยงที่คำนวณได้:' : 'Calculated Risk Tier:'}</span>
                 <span
                   className={`font-bold ${
                     computedRiskTier === 'HIGH'
@@ -321,8 +435,12 @@ export const AeonGuardian: React.FC = () => {
             {/* Scope Adjustment Slider */}
             <div className="mt-3 p-3 bg-neutral-950/60 rounded-lg border border-neutral-800">
               <div className="flex items-center justify-between text-xs font-mono mb-1">
-                <span className="text-neutral-300">Operator Scope Modulation:</span>
-                <span className="text-cyan-400 font-bold">{currentScopeOrders} Orders</span>
+                <span className="text-neutral-300">
+                  {isThai ? 'การปรับขอบเขตจำนวนออเดอร์โดยผู้ควบคุม:' : 'Operator Scope Modulation:'}
+                </span>
+                <span className="text-cyan-400 font-bold">
+                  {currentScopeOrders} {isThai ? 'ออเดอร์' : 'Orders'}
+                </span>
               </div>
               <input
                 type="range"
@@ -334,15 +452,17 @@ export const AeonGuardian: React.FC = () => {
                 className="w-full accent-cyan-500 cursor-pointer"
               />
               <div className="flex justify-between text-[10px] font-mono text-neutral-500 mt-1">
-                <span>5 Orders (Low Risk)</span>
-                <span>20 Orders (Policy Cap)</span>
-                <span>35 Orders (High Risk / Multi-Zone)</span>
+                <span>{isThai ? '5 ออเดอร์ (ความเสี่ยงต่ำ)' : '5 Orders (Low Risk)'}</span>
+                <span>{isThai ? '20 ออเดอร์ (เพดานนโยบาย)' : '20 Orders (Policy Cap)'}</span>
+                <span>{isThai ? '35 ออเดอร์ (ความเสี่ยงสูง)' : '35 Orders (High Risk)'}</span>
               </div>
             </div>
 
             {/* Operator Notes Input */}
             <div className="mt-3">
-              <label className="text-[11px] font-mono text-neutral-400 block mb-1">Operator Attestation Note:</label>
+              <label className="text-[11px] font-mono text-neutral-400 block mb-1">
+                {isThai ? 'บันทึกเหตุผลประกอบการตัดสินใจของผู้ควบคุม:' : 'Operator Attestation Note:'}
+              </label>
               <input
                 type="text"
                 value={approverNotes}
@@ -362,14 +482,14 @@ export const AeonGuardian: React.FC = () => {
                   className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer shadow-lg shadow-emerald-600/20"
                 >
                   <Check className="w-4 h-4" />
-                  <span>Approve & Sign Token</span>
+                  <span>{isThai ? 'อนุมัติและลงนามโทเคน' : 'Approve & Sign Token'}</span>
                 </button>
                 <button
                   onClick={handleReject}
                   className="py-2.5 px-3 bg-neutral-800 hover:bg-neutral-700 text-rose-300 border border-neutral-700 font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
                   <XCircle className="w-4 h-4" />
-                  <span>Reject Advisory</span>
+                  <span>{isThai ? 'ปฏิเสธข้อเสนอแนะ' : 'Reject Advisory'}</span>
                 </button>
               </div>
             ) : (
@@ -378,7 +498,7 @@ export const AeonGuardian: React.FC = () => {
                 className="w-full py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-mono rounded flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Reset Review Case</span>
+                <span>{isThai ? 'รีเซ็ตเคสเพื่อทดสอบใหม่' : 'Reset Review Case'}</span>
               </button>
             )}
 
@@ -389,7 +509,11 @@ export const AeonGuardian: React.FC = () => {
                 className="w-full py-1.5 bg-rose-950/30 hover:bg-rose-950/60 text-rose-400 border border-rose-900/60 rounded text-[11px] font-mono flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Simulate Telemetry Tamper / Invariant Breach (Tests Fail-Closed)</span>
+                <span>
+                  {isThai
+                    ? 'จำลองข้อมูลโทรมาตรถูกปลอมแปลง / แฮชผิดพลาด (ทดสอบระบบ Fail-Closed)'
+                    : 'Simulate Telemetry Tamper / Invariant Breach (Tests Fail-Closed)'}
+                </span>
               </button>
             )}
           </div>
@@ -402,10 +526,12 @@ export const AeonGuardian: React.FC = () => {
               <div className="flex items-center gap-2">
                 <History className="w-4 h-4 text-cyan-400" />
                 <h3 className="text-sm font-bold text-white uppercase font-mono tracking-wider">
-                  Immutable Audit Ledger
+                  {isThai ? 'สมุดบันทึกการตรวจสอบล่าสุด (Immutable Audit Ledger)' : 'Immutable Audit Ledger'}
                 </h3>
               </div>
-              <span className="text-[10px] font-mono text-neutral-400">Cryptographically Signed</span>
+              <span className="text-[10px] font-mono text-neutral-400">
+                {isThai ? 'ลงนามด้วยรหัสลับดิจิทัล' : 'Cryptographically Signed'}
+              </span>
             </div>
 
             {/* Audit Records List */}
@@ -436,8 +562,16 @@ export const AeonGuardian: React.FC = () => {
 
                   <div className="pt-1 text-[10px] text-neutral-500 space-y-0.5">
                     <div className="flex justify-between">
-                      <span>Approver: <strong className="text-neutral-300">{record.humanDecision.approverId || 'N/A'}</strong></span>
-                      <span>Risk: <strong className="text-amber-300">{record.riskTier}</strong></span>
+                      <span>
+                        {isThai ? 'ผู้ตรวจสอบ:' : 'Approver:'}{' '}
+                        <strong className="text-neutral-300">
+                          {record.humanDecision.approverId || 'N/A'}
+                        </strong>
+                      </span>
+                      <span>
+                        {isThai ? 'ความเสี่ยง:' : 'Risk:'}{' '}
+                        <strong className="text-amber-300">{record.riskTier}</strong>
+                      </span>
                     </div>
                     <div className="truncate">
                       Hash: <code className="text-neutral-400">{record.evidenceHash}</code>
@@ -454,8 +588,8 @@ export const AeonGuardian: React.FC = () => {
           </div>
 
           <div className="mt-3 pt-2 border-t border-neutral-800 text-[10px] font-mono text-neutral-500 flex justify-between">
-            <span>Merkle Chain Integrity: 100% VERIFIED</span>
-            <span>Non-Repudiation Guaranteed</span>
+            <span>{isThai ? 'ความสมบูรณ์ของ Merkle Chain: ยืนยันแล้ว 100%' : 'Merkle Chain Integrity: 100% VERIFIED'}</span>
+            <span>{isThai ? 'รับประกันการห้ามปฏิเสธความรับผิด' : 'Non-Repudiation Guaranteed'}</span>
           </div>
         </div>
       </div>

@@ -19,6 +19,7 @@ import {
 import { OrderFsmStatus, FulfillmentStepInfo } from '../types';
 import { CONNECTORS_DATA } from '../data/mockData';
 import { CustomerCourierTracking } from './CustomerCourierTracking';
+import { FulfillmentStateMachineVisualizer } from './FulfillmentStateMachineVisualizer';
 
 interface FulfillmentOrchestrationProps {
   onNavigateToFeedback?: (orderId: string, courierId: string) => void;
@@ -246,6 +247,15 @@ Execution: Zero side-effects triggered.`);
           </button>
         </div>
       </div>
+
+      {/* Visual State Machine Topology & Cross-System Integration Architecture */}
+      <FulfillmentStateMachineVisualizer
+        activeStepIndex={currentStepIndex}
+        onSelectStepIndex={(idx) => {
+          setCurrentStepIndex(idx);
+          setSimulatedFailure('NONE');
+        }}
+      />
 
       {/* Step Visualizer Bar */}
       <div className="bg-neutral-900/80 border border-neutral-800 rounded-xl p-4 overflow-x-auto">

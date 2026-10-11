@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { MarketplaceIntelligence } from './components/MarketplaceIntelligence';
+import { PredictiveDemandForecasting } from './components/PredictiveDemandForecasting';
+import { RealTimePerformanceMonitor } from './components/RealTimePerformanceMonitor';
+import { CapacityPlanner } from './components/CapacityPlanner';
 import { DynamicPricingModule } from './components/DynamicPricingModule';
 import { FulfillmentOrchestration } from './components/FulfillmentOrchestration';
 import { CustomerFeedbackModule } from './components/CustomerFeedbackModule';
@@ -8,13 +11,15 @@ import { CourierPerformanceDashboard } from './components/CourierPerformanceDash
 import { GmailAlertHub } from './components/GmailAlertHub';
 import { RouteOptimization } from './components/RouteOptimization';
 import { AeonGuardian } from './components/AeonGuardian';
+import { AuditLogs } from './components/AuditLogs';
 import { EnterpriseArchitecture } from './components/EnterpriseArchitecture';
 import { WhatICanContribute } from './components/WhatICanContribute';
 import { UberProblemExploration } from './components/UberProblemExploration';
 import { AiScenarioStudio } from './components/AiScenarioStudio';
 import { OnboardingModal } from './components/OnboardingModal';
 import { Footer } from './components/Footer';
-import { CITIES_DATA } from './data/mockData';
+import { CITIES_DATA, INITIAL_AUDIT_RECORDS } from './data/mockData';
+import { AuditRecord } from './types';
 
 export default function App() {
   const [selectedCityId, setSelectedCityId] = useState<string>('nyc');
@@ -23,6 +28,11 @@ export default function App() {
   const [feedbackCourierId, setFeedbackCourierId] = useState<string>('CR-8841');
   const [gmailAlertMode, setGmailAlertMode] = useState<'summary' | 'shift' | 'incident'>('summary');
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(true);
+  const [auditRecords, setAuditRecords] = useState<AuditRecord[]>(INITIAL_AUDIT_RECORDS);
+
+  const handleAddAuditRecord = (newRecord: AuditRecord) => {
+    setAuditRecords((prev) => [newRecord, ...prev]);
+  };
 
   const currentCity = CITIES_DATA[selectedCityId] || CITIES_DATA.nyc;
 
@@ -79,9 +89,39 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'demand_forecast' && (
+          <div className="space-y-8 animate-fadeIn">
+            <PredictiveDemandForecasting
+              city={currentCity}
+              onNavigateToGovernance={handleNavigateToGovernance}
+            />
+          </div>
+        )}
+
+        {activeTab === 'performance_monitor' && (
+          <div className="space-y-8 animate-fadeIn">
+            <RealTimePerformanceMonitor
+              city={currentCity}
+              onNavigateToGovernance={handleNavigateToGovernance}
+            />
+          </div>
+        )}
+
+        {activeTab === 'capacity_planner' && (
+          <div className="space-y-8 animate-fadeIn">
+            <CapacityPlanner
+              city={currentCity}
+              onNavigateToGovernance={handleNavigateToGovernance}
+            />
+          </div>
+        )}
+
         {activeTab === 'pricing' && (
           <div className="space-y-8 animate-fadeIn">
-            <DynamicPricingModule city={currentCity} />
+            <DynamicPricingModule
+              city={currentCity}
+              onNavigateToGovernance={handleNavigateToGovernance}
+            />
           </div>
         )}
 
@@ -126,7 +166,23 @@ export default function App() {
 
         {activeTab === 'governance' && (
           <div className="space-y-8 animate-fadeIn">
-            <AeonGuardian />
+            <AeonGuardian
+              auditRecords={auditRecords}
+              onAddAuditRecord={handleAddAuditRecord}
+              onOpenAuditLogsTab={() => setActiveTab('audit_logs')}
+            />
+            <AuditLogs
+              records={auditRecords}
+            />
+          </div>
+        )}
+
+        {activeTab === 'audit_logs' && (
+          <div className="space-y-8 animate-fadeIn">
+            <AuditLogs
+              records={auditRecords}
+              onNavigateToGovernance={() => setActiveTab('governance')}
+            />
           </div>
         )}
 

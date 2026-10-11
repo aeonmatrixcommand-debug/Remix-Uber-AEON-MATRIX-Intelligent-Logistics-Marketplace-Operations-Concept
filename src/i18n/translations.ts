@@ -30,7 +30,10 @@ export const TRANSLATIONS = {
     tabPricing: 'Dynamic Pricing & Surge',
     tabFeedback: 'Customer Feedback & QA',
     tabCourierPerformance: 'Courier Fleet & Shifts',
+    tabCapacityPlanner: 'Capacity Planner',
+    tabPerformanceMonitor: 'Live KPI Performance Monitor',
     tabGmailDispatch: 'Gmail Ops Alert Hub',
+    tabAuditLogs: 'Audit Logs (Read-Only)',
 
     // Audience Chips
     audiences: [
@@ -221,7 +224,10 @@ export const TRANSLATIONS = {
     tabPricing: 'ระบบกำหนดราคาพลวัตและเซิร์จ',
     tabFeedback: 'ข้อเสนอแนะลูกค้าและการควบคุมคุณภาพ',
     tabCourierPerformance: 'ประสิทธิภาพคนขับ & จัดกะงาน',
+    tabCapacityPlanner: 'วางแผนกำลังพลรายย่าน (Capacity)',
+    tabPerformanceMonitor: 'แดชบอร์ด KPI โลจิสติกส์เรียลไทม์',
     tabGmailDispatch: 'ระบบแจ้งเตือนทาง Gmail',
+    tabAuditLogs: 'บันทึกการตัดสินใจ (Audit Logs)',
 
     // Audience Chips
     audiences: [

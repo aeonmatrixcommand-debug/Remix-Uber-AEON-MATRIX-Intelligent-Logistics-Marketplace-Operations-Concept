@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -14,10 +14,22 @@ import {
   CheckCircle2,
   Sliders,
   Flame,
+  Play,
+  Pause,
+  Radio,
+  MapPin,
 } from 'lucide-react';
 import { CityMarketplace, SubMarketZone } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { MarketplaceSummarySparklines } from './MarketplaceSummarySparklines';
+import { AnomalyDetectionSystem } from './AnomalyDetectionSystem';
+import { ConceptualDynamicPricing } from './ConceptualDynamicPricing';
+import { CapacityPlanner } from './CapacityPlanner';
+import { CityHeatmap } from './CityHeatmap';
+import { CourierAvailabilityForecast } from './CourierAvailabilityForecast';
+import { PredictiveDemandForecasting } from './PredictiveDemandForecasting';
+import { RealTimePerformanceMonitor } from './RealTimePerformanceMonitor';
+import { FulfillmentStateMachineVisualizer } from './FulfillmentStateMachineVisualizer';
 
 interface MarketplaceIntelligenceProps {
   city: CityMarketplace;
@@ -36,27 +48,144 @@ export const MarketplaceIntelligence: React.FC<MarketplaceIntelligenceProps> = (
   const [selectedZoneId, setSelectedZoneId] = useState<string>(city.zones[3]?.id || city.zones[0]?.id);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  // Compute live simulated metrics based on sliders
-  const activeOrdersSim = Math.round(city.activeOrders * (1 + demandSurgeFactor / 100));
-  const availableCouriersSim = Math.max(100, Math.round(city.availableCouriers * (1 - courierDropFactor / 100)));
-  const unmatchedBacklogSim = Math.round(city.unmatchedBacklog * (1 + (demandSurgeFactor * 1.5 + courierDropFactor * 2) / 100));
-  const avgSlaMinutesSim = +(city.avgSlaMinutes * (1 + (demandSurgeFactor * 0.4 + courierDropFactor * 0.6) / 100)).toFixed(1);
-  const cancellationRiskSim = +(city.cancellationRiskPct * (1 + (demandSurgeFactor * 0.8 + courierDropFactor * 1.2) / 100)).toFixed(1);
+  // Real-time dynamic telemetry stream state
+  const [isLiveStreaming, setIsLiveStreaming] = useState<boolean>(true);
+  const [tickCount, setTickCount] = useState<number>(1);
+  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>('08:04:12 UTC');
+  const [liveJitter, setLiveJitter] = useState<{
+    ordersDelta: number;
+    couriersDelta: number;
+    backlogDelta: number;
+    slaDelta: number;
+    cancelDelta: number;
+    healthDelta: number;
+    p2IncidentsDelta: number;
+    zoneDemandOffsets: Record<string, number>;
+    zoneSupplyOffsets: Record<string, number>;
+  }>({
+    ordersDelta: 0,
+    couriersDelta: 0,
+    backlogDelta: 0,
+    slaDelta: 0,
+    cancelDelta: 0,
+    healthDelta: 0,
+    p2IncidentsDelta: 0,
+    zoneDemandOffsets: {},
+    zoneSupplyOffsets: {},
+  });
+
+  // Reset selected zone when city changes
+  useEffect(() => {
+    setSelectedZoneId(city.zones[3]?.id || city.zones[0]?.id);
+  }, [city.cluster]);
+
+  // Trigger a single dynamic telemetry update tick
+  const triggerRealtimeTick = () => {
+    const zDemand: Record<string, number> = {};
+    const zSupply: Record<string, number> = {};
+    city.zones.forEach((z, idx) => {
+      const wave = Math.sin(Date.now() / 4000 + idx);
+      zDemand[z.id] = Math.round(wave * 9 + (Math.random() - 0.48) * 8);
+      zSupply[z.id] = Math.round(-wave * 5 + (Math.random() - 0.5) * 6);
+    });
+
+    setLiveJitter({
+      ordersDelta: Math.round((Math.random() - 0.46) * 145),
+      couriersDelta: Math.round((Math.random() - 0.5) * 64),
+      backlogDelta: Math.round((Math.random() - 0.45) * 18),
+      slaDelta: +((Math.random() - 0.47) * 0.9).toFixed(1),
+      cancelDelta: +((Math.random() - 0.48) * 0.25).toFixed(2),
+      healthDelta: Math.round((Math.random() - 0.5) * 3),
+      p2IncidentsDelta: Math.random() > 0.78 ? 1 : 0,
+      zoneDemandOffsets: zDemand,
+      zoneSupplyOffsets: zSupply,
+    });
+    setTickCount((prev) => prev + 1);
+    const now = new Date();
+    setLastUpdatedTime(now.toISOString().slice(11, 19) + ' UTC');
+  };
+
+  useEffect(() => {
+    if (!isLiveStreaming) return;
+    const interval = setInterval(() => {
+      triggerRealtimeTick();
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [isLiveStreaming, city.cluster]);
+
+  // Compute live simulated metrics based on sliders + real-time telemetry jitter
+  const activeOrdersSim = Math.max(
+    250,
+    Math.round(city.activeOrders * (1 + demandSurgeFactor / 100) + liveJitter.ordersDelta)
+  );
+  const availableCouriersSim = Math.max(
+    100,
+    Math.round(city.availableCouriers * (1 - courierDropFactor / 100) + liveJitter.couriersDelta)
+  );
+  const unmatchedBacklogSim = Math.max(
+    12,
+    Math.round(
+      city.unmatchedBacklog * (1 + (demandSurgeFactor * 1.5 + courierDropFactor * 2) / 100) +
+        liveJitter.backlogDelta
+    )
+  );
+  const avgSlaMinutesSim = Math.max(
+    14.0,
+    +(
+      city.avgSlaMinutes * (1 + (demandSurgeFactor * 0.4 + courierDropFactor * 0.6) / 100) +
+      liveJitter.slaDelta
+    ).toFixed(1)
+  );
+  const cancellationRiskSim = Math.max(
+    0.4,
+    +(
+      city.cancellationRiskPct * (1 + (demandSurgeFactor * 0.8 + courierDropFactor * 1.2) / 100) +
+      liveJitter.cancelDelta
+    ).toFixed(1)
+  );
   const healthScoreSim = Math.max(
     42,
-    Math.min(99, Math.round(city.healthScore - demandSurgeFactor * 0.35 - courierDropFactor * 0.45))
+    Math.min(
+      99,
+      Math.round(
+        city.healthScore -
+          demandSurgeFactor * 0.35 -
+          courierDropFactor * 0.45 +
+          liveJitter.healthDelta
+      )
+    )
+  );
+  const p2IncidentsSim = Math.max(
+    0,
+    city.incidents.p2 + liveJitter.p2IncidentsDelta + (demandSurgeFactor >= 25 ? 1 : 0)
   );
 
   const zonesSim: SubMarketZone[] = city.zones.map((z) => {
     const isTargetZone = z.id === selectedZoneId;
-    const zoneDemandMultiplier = isTargetZone ? 1 + (demandSurgeFactor * 1.3) / 100 : 1 + demandSurgeFactor / 100;
-    const zoneSupplyMultiplier = isTargetZone ? 1 - (courierDropFactor * 1.4) / 100 : 1 - courierDropFactor / 100;
+    const zoneDemandMultiplier = isTargetZone
+      ? 1 + (demandSurgeFactor * 1.3) / 100
+      : 1 + demandSurgeFactor / 100;
+    const zoneSupplyMultiplier = isTargetZone
+      ? 1 - (courierDropFactor * 1.4) / 100
+      : 1 - courierDropFactor / 100;
 
-    const newDemand = Math.round(z.demandReqMin * zoneDemandMultiplier);
-    const newSupply = Math.max(50, Math.round(z.availableCouriers * zoneSupplyMultiplier));
+    const jitterD = liveJitter.zoneDemandOffsets[z.id] || 0;
+    const jitterS = liveJitter.zoneSupplyOffsets[z.id] || 0;
+
+    const newDemand = Math.max(40, Math.round(z.demandReqMin * zoneDemandMultiplier + jitterD));
+    const newSupply = Math.max(50, Math.round(z.availableCouriers * zoneSupplyMultiplier + jitterS));
     const newImbalance = +(((newSupply - newDemand) / newDemand) * 100).toFixed(1);
-    const newSla = +(z.medianSlaMinutes * (1 + (demandSurgeFactor * 0.3 + courierDropFactor * 0.5) / 100)).toFixed(1);
-    const newCancel = +(z.cancellationRiskPct * (1 + (demandSurgeFactor * 0.6 + courierDropFactor * 0.8) / 100)).toFixed(1);
+    const newSla = +(
+      z.medianSlaMinutes * (1 + (demandSurgeFactor * 0.3 + courierDropFactor * 0.5) / 100) +
+      liveJitter.slaDelta * 0.6
+    ).toFixed(1);
+    const newCancel = Math.max(
+      0.3,
+      +(
+        z.cancellationRiskPct * (1 + (demandSurgeFactor * 0.6 + courierDropFactor * 0.8) / 100) +
+        liveJitter.cancelDelta * 0.7
+      ).toFixed(1)
+    );
 
     let status: SubMarketZone['status'] = 'STABLE';
     if (newImbalance < -25 || newCancel > 4.5) status = 'CRITICAL';
@@ -74,9 +203,12 @@ export const MarketplaceIntelligence: React.FC<MarketplaceIntelligenceProps> = (
   });
 
   const selectedZone = zonesSim.find((z) => z.id === selectedZoneId) || zonesSim[0];
+  const totalZoneDemandReqMin = zonesSim.reduce((acc, z) => acc + z.demandReqMin, 0);
+  const maxZoneDemand = Math.max(...zonesSim.map((z) => z.demandReqMin), 1);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
+    triggerRealtimeTick();
     setTimeout(() => setIsRefreshing(false), 400);
   };
 
@@ -105,8 +237,27 @@ export const MarketplaceIntelligence: React.FC<MarketplaceIntelligenceProps> = (
           </p>
         </div>
 
-        {/* Simulation Sandbox Trigger */}
-        <div className="flex items-center gap-2">
+        {/* Simulation Sandbox Trigger & Live Stream Toggle */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 mr-1">
+            <Radio className={`w-3.5 h-3.5 ${isLiveStreaming ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />
+            <span>{isLiveStreaming ? 'LIVE STREAM (2.2s)' : 'STREAM PAUSED'}</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-neutral-300 tabular-nums">Tick #{tickCount}</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-neutral-400 tabular-nums">{lastUpdatedTime}</span>
+          </div>
+          <button
+            onClick={() => setIsLiveStreaming(!isLiveStreaming)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono border transition cursor-pointer ${
+              isLiveStreaming
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
+                : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border-neutral-700'
+            }`}
+          >
+            {isLiveStreaming ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 text-cyan-400" />}
+            <span>{isLiveStreaming ? 'Pause Live Feed' : 'Resume Live Feed'}</span>
+          </button>
           <button
             onClick={handleRefresh}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-mono text-neutral-300 border border-neutral-700 transition cursor-pointer"
@@ -151,85 +302,214 @@ export const MarketplaceIntelligence: React.FC<MarketplaceIntelligenceProps> = (
         courierDrop={courierDropFactor}
       />
 
-      {/* Top 8 Real-Time Operational KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-        {/* Active Orders */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiActiveOrders}</div>
-          <div className="text-lg font-bold font-mono text-white mt-1">{activeOrdersSim.toLocaleString()}</div>
-          <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono mt-1">
-            <TrendingUp className="w-3 h-3" />
-            <span>+{demandSurgeFactor}%</span>
+      {/* Uber × AEON MATRIX: 9 Real-Time Operational Dashboard Widgets */}
+      <div className="space-y-3">
+        {/* Top 8 Core Telemetry Widgets */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+          {/* 1. Active Orders */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiActiveOrders}</div>
+            <div className="text-lg font-bold font-mono text-white mt-1 tabular-nums">
+              {activeOrdersSim.toLocaleString()}
+            </div>
+            <div className="flex items-center justify-between text-[10px] font-mono mt-1 tabular-nums">
+              <span className="flex items-center gap-0.5 text-emerald-400">
+                <TrendingUp className="w-3 h-3" />
+                <span>{liveJitter.ordersDelta >= 0 ? `+${liveJitter.ordersDelta}` : liveJitter.ordersDelta}/tick</span>
+              </span>
+              <span className="text-neutral-500">+{demandSurgeFactor}%</span>
+            </div>
           </div>
-        </div>
 
-        {/* Available Couriers */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiAvailCouriers}</div>
-          <div className="text-lg font-bold font-mono text-cyan-400 mt-1">{availableCouriersSim.toLocaleString()}</div>
-          <div className="flex items-center gap-1 text-[10px] text-neutral-400 font-mono mt-1">
-            <span>Fleet: 0.72</span>
+          {/* 2. Available Couriers */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiAvailCouriers}</div>
+            <div className="text-lg font-bold font-mono text-cyan-400 mt-1 tabular-nums">
+              {availableCouriersSim.toLocaleString()}
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono mt-1 tabular-nums">
+              <span>Util: {Math.min(98, Math.round((activeOrdersSim / (availableCouriersSim * 1.8)) * 100))}%</span>
+              <span className="text-cyan-400/80">
+                {liveJitter.couriersDelta >= 0 ? `+${liveJitter.couriersDelta}` : liveJitter.couriersDelta}
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* Supply-Demand Imbalance */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiImbalance}</div>
-          <div className="text-lg font-bold font-mono text-rose-400 mt-1">
-            {selectedZone.imbalancePct}%
-          </div>
-          <div className="flex items-center gap-1 text-[10px] text-rose-400 font-mono mt-1">
-            <TrendingDown className="w-3 h-3" />
-            <span>{selectedZone.id}</span>
-          </div>
-        </div>
-
-        {/* Estimated Delivery SLA */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiDeliverySla}</div>
-          <div className="text-lg font-bold font-mono text-amber-300 mt-1">{avgSlaMinutesSim}m</div>
-          <div className="flex items-center gap-1 text-[10px] text-neutral-400 font-mono mt-1">
-            <Clock className="w-3 h-3 text-neutral-500" />
-            <span>Target: 25m</span>
-          </div>
-        </div>
-
-        {/* Unmatched Order Backlog */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiBacklog}</div>
-          <div className="text-lg font-bold font-mono text-white mt-1">{unmatchedBacklogSim}</div>
-          <div className="text-[10px] text-amber-400 font-mono mt-1">Latency: 4.2m</div>
-        </div>
-
-        {/* Cancellation Risk */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiCancelRisk}</div>
-          <div className="text-lg font-bold font-mono text-rose-300 mt-1">{cancellationRiskSim}%</div>
-          <div className="text-[10px] text-neutral-400 font-mono mt-1">&lt; 3.0%</div>
-        </div>
-
-        {/* Operational Incidents */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiIncidents}</div>
-          <div className="text-lg font-bold font-mono text-white mt-1">
-            <span className="text-amber-400">{city.incidents.p2} P2</span>
-            <span className="text-neutral-500 mx-1">/</span>
-            <span className="text-emerald-400">{city.incidents.p1} P1</span>
-          </div>
-          <div className="text-[10px] text-neutral-400 font-mono mt-1">Zero P1</div>
-        </div>
-
-        {/* Marketplace Health Score */}
-        <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
-          <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiHealthScore}</div>
-          <div className="text-lg font-bold font-mono text-emerald-400 mt-1">{healthScoreSim} / 100</div>
-          <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden mt-1.5">
+          {/* 3. Supply-Demand Imbalance */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiImbalance}</div>
             <div
-              className={`h-full transition-all duration-500 ${
-                healthScoreSim > 80 ? 'bg-emerald-500' : healthScoreSim > 65 ? 'bg-amber-500' : 'bg-rose-500'
+              className={`text-lg font-bold font-mono mt-1 tabular-nums ${
+                selectedZone.imbalancePct < 0 ? 'text-rose-400' : 'text-emerald-400'
               }`}
-              style={{ width: `${healthScoreSim}%` }}
-            />
+            >
+              {selectedZone.imbalancePct > 0 ? `+${selectedZone.imbalancePct}%` : `${selectedZone.imbalancePct}%`}
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-rose-400 font-mono mt-1 tabular-nums">
+              <span className="flex items-center gap-0.5">
+                <TrendingDown className="w-3 h-3" />
+                <span>{selectedZone.id}</span>
+              </span>
+              <span className="text-neutral-400">
+                {selectedZone.availableCouriers - selectedZone.demandReqMin} net
+              </span>
+            </div>
+          </div>
+
+          {/* 4. Estimated Delivery SLA */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiDeliverySla}</div>
+            <div className="text-lg font-bold font-mono text-amber-300 mt-1 tabular-nums">{avgSlaMinutesSim}m</div>
+            <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono mt-1 tabular-nums">
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3 text-neutral-500" />
+                <span>Target: 25m</span>
+              </span>
+              <span className={avgSlaMinutesSim > 28 ? 'text-rose-400' : 'text-emerald-400'}>
+                P90: {(avgSlaMinutesSim * 1.24).toFixed(1)}m
+              </span>
+            </div>
+          </div>
+
+          {/* 5. Order Backlog */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiBacklog}</div>
+            <div className="text-lg font-bold font-mono text-white mt-1 tabular-nums">{unmatchedBacklogSim}</div>
+            <div className="flex items-center justify-between text-[10px] text-amber-400 font-mono mt-1 tabular-nums">
+              <span>Wait: {(3.2 + unmatchedBacklogSim / 240).toFixed(1)}m</span>
+              <span className="text-neutral-400">Queue</span>
+            </div>
+          </div>
+
+          {/* 6. Cancellation Risk */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiCancelRisk}</div>
+            <div className="text-lg font-bold font-mono text-rose-300 mt-1 tabular-nums">{cancellationRiskSim}%</div>
+            <div className="flex items-center justify-between text-[10px] text-neutral-400 font-mono mt-1 tabular-nums">
+              <span> Ceil &lt; 3.0%</span>
+              <span className="text-rose-400">~{Math.round((activeOrdersSim * cancellationRiskSim) / 100)} ord</span>
+            </div>
+          </div>
+
+          {/* 7. Operational Incidents */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiIncidents}</div>
+            <div className="text-lg font-bold font-mono text-white mt-1 tabular-nums">
+              <span className="text-amber-400">{p2IncidentsSim} P2</span>
+              <span className="text-neutral-500 mx-1">/</span>
+              <span className="text-emerald-400">{city.incidents.p1} P1</span>
+            </div>
+            <div className="text-[10px] text-neutral-400 font-mono mt-1">Zero P1 Outages</div>
+          </div>
+
+          {/* 8. Marketplace Health Score */}
+          <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3">
+            <div className="text-[10px] font-mono text-neutral-400 uppercase">{t.kpiHealthScore}</div>
+            <div className="text-lg font-bold font-mono text-emerald-400 mt-1 tabular-nums">
+              {healthScoreSim} / 100
+            </div>
+            <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden mt-1.5">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  healthScoreSim > 80 ? 'bg-emerald-500' : healthScoreSim > 65 ? 'bg-amber-500' : 'bg-rose-500'
+                }`}
+                style={{ width: `${healthScoreSim}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 9. Dedicated 'Demand by Zone' Real-Time Operational Widget */}
+        <div className="bg-neutral-900/85 border border-neutral-800 rounded-xl p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-cyan-400" />
+              <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-white">
+                Demand by Zone (Real-Time Order Velocity & Supply Equilibrium)
+              </h3>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] font-mono text-neutral-400 tabular-nums">
+              <span>
+                City Velocity: <strong className="text-white">{totalZoneDemandReqMin.toLocaleString()} req/min</strong>
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>
+                Active Focus: <strong className="text-cyan-400">{selectedZone.id} ({selectedZone.name})</strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+            {zonesSim.map((zone) => {
+              const isSelected = zone.id === selectedZoneId;
+              const pctOfPeak = Math.min(100, Math.round((zone.demandReqMin / maxZoneDemand) * 100));
+              const jitterVal = liveJitter.zoneDemandOffsets[zone.id] || 0;
+
+              return (
+                <button
+                  key={zone.id}
+                  onClick={() => setSelectedZoneId(zone.id)}
+                  className={`text-left p-3 rounded-lg border transition cursor-pointer ${
+                    isSelected
+                      ? 'bg-neutral-950 border-cyan-500/70 ring-1 ring-cyan-500/30'
+                      : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-mono text-xs font-bold text-white flex items-center gap-1.5">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          zone.status === 'STABLE'
+                            ? 'bg-emerald-400'
+                            : zone.status === 'DEGRADED'
+                            ? 'bg-amber-400'
+                            : 'bg-rose-500 animate-ping'
+                        }`}
+                      />
+                      {zone.id}
+                    </span>
+                    <span className="text-[10px] font-mono text-neutral-400 tabular-nums">
+                      {jitterVal >= 0 ? `+${jitterVal}` : jitterVal} req/m
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-neutral-400 truncate mt-0.5">{zone.name}</div>
+
+                  <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums">
+                    <span className="text-sm font-bold text-white">{zone.demandReqMin} req/m</span>
+                    <span className="text-[10px] text-cyan-400">{zone.availableCouriers} drv</span>
+                  </div>
+
+                  {/* Proportional Demand Bar */}
+                  <div className="w-full h-1.5 bg-neutral-800 rounded-full overflow-hidden mt-1.5">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        zone.status === 'CRITICAL'
+                          ? 'bg-rose-500'
+                          : zone.status === 'DEGRADED'
+                          ? 'bg-amber-400'
+                          : 'bg-cyan-400'
+                      }`}
+                      style={{ width: `${pctOfPeak}%` }}
+                    />
+                  </div>
+
+                  <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono tabular-nums">
+                    <span className="text-neutral-500">SLA: {zone.medianSlaMinutes}m</span>
+                    <span
+                      className={
+                        zone.imbalancePct < -15
+                          ? 'text-rose-400 font-semibold'
+                          : zone.imbalancePct < 0
+                          ? 'text-amber-400'
+                          : 'text-emerald-400'
+                      }
+                    >
+                      {zone.imbalancePct > 0 ? `+${zone.imbalancePct}%` : `${zone.imbalancePct}%`} imb
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -510,6 +790,71 @@ export const MarketplaceIntelligence: React.FC<MarketplaceIntelligenceProps> = (
           </div>
         </div>
       </div>
+
+      {/* Visual Representation of the Intelligent Fulfillment Orchestration State Machine (ORDER_CREATED -> DELIVERED) */}
+      <FulfillmentStateMachineVisualizer />
+
+      {/* Dedicated Real-Time Logistics Performance Monitoring Dashboard */}
+      <RealTimePerformanceMonitor
+        city={city}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
+
+      {/* CityHeatmap: Real-Time Demand Hotspots & Courier Density Overlay */}
+      <CityHeatmap
+        city={city}
+        zonesSim={zonesSim}
+        selectedZoneId={selectedZoneId}
+        onSelectZone={setSelectedZoneId}
+        demandSurgeFactor={demandSurgeFactor}
+        courierDropFactor={courierDropFactor}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
+
+      {/* Predictive Demand Forecasting: 24-Hour Order Volume Time-Series Projection */}
+      <PredictiveDemandForecasting
+        city={city}
+        selectedZoneId={selectedZoneId}
+        onSelectZone={setSelectedZoneId}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
+
+      {/* Control Tower Predictive Analytics: 60+ Min Advance Courier Availability & Shortage/Surplus Forecaster */}
+      <CourierAvailabilityForecast
+        city={city}
+        selectedZoneId={selectedZoneId}
+        onSelectZone={setSelectedZoneId}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
+
+      {/* Neighborhood Courier Supply & Fulfillment Latency Capacity Planner */}
+      <CapacityPlanner
+        city={city}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
+
+      {/* Conceptual Multi-Factor Dynamic Pricing Module */}
+      <ConceptualDynamicPricing
+        city={city}
+        selectedZone={selectedZone}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
+
+      {/* AI-Driven Anomaly Detection System */}
+      <AnomalyDetectionSystem
+        city={city}
+        activeOrdersSim={activeOrdersSim}
+        availableCouriersSim={availableCouriersSim}
+        cancellationRiskSim={cancellationRiskSim}
+        avgSlaMinutesSim={avgSlaMinutesSim}
+        demandSurgeFactor={demandSurgeFactor}
+        courierDropFactor={courierDropFactor}
+        onInjectTestAnomaly={() => {
+          setDemandSurgeFactor(38);
+          setCourierDropFactor(20);
+        }}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
     </div>
   );
 };

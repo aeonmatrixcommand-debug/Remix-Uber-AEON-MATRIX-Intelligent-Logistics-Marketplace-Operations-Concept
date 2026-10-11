@@ -17,12 +17,17 @@ import {
 import { CityMarketplace, PricingAuditLog, SurgeCategory } from '../types';
 import { INITIAL_PRICING_LOGS } from '../data/mockData';
 import { useLanguage } from '../context/LanguageContext';
+import { ConceptualDynamicPricing } from './ConceptualDynamicPricing';
 
 interface DynamicPricingModuleProps {
   city: CityMarketplace;
+  onNavigateToGovernance?: (advisoryData?: any) => void;
 }
 
-export const DynamicPricingModule: React.FC<DynamicPricingModuleProps> = ({ city }) => {
+export const DynamicPricingModule: React.FC<DynamicPricingModuleProps> = ({
+  city,
+  onNavigateToGovernance = () => {},
+}) => {
   const { language } = useLanguage();
   const isThai = language === 'th';
 
@@ -34,7 +39,123 @@ export const DynamicPricingModule: React.FC<DynamicPricingModuleProps> = ({ city
   const [pricingLogs, setPricingLogs] = useState<PricingAuditLog[]>(INITIAL_PRICING_LOGS);
   const [justLoggedQuoteId, setJustLoggedQuoteId] = useState<string | null>(null);
 
+  // Operator Approval Queue State per Zone (strictly advisory until operator approves/rejects)
+  const [zoneOperatorDecisions, setZoneOperatorDecisions] = useState<
+    Record<
+      string,
+      {
+        status: 'PENDING_OPERATOR_APPROVAL' | 'APPROVED' | 'MODIFIED_APPROVED' | 'REJECTED_HOLD_BASELINE';
+        approvedMultiplier?: number;
+        operatorNote?: string;
+        decidedAt?: string;
+      }
+    >
+  >({});
+  const [operatorNoteInput, setOperatorNoteInput] = useState<string>(
+    'Verified courier deficit & predicted SLA breach risk; approving advisory surge cap.'
+  );
+  const [customMultiplierOverride, setCustomMultiplierOverride] = useState<number | null>(null);
+
   const selectedZone = city.zones.find((z) => z.id === selectedZoneId) || city.zones[0];
+
+  // Analyze real-time Courier Availability, Order Volume per Zone, and Predicted Delivery Times (SLA)
+  // to suggest optimal advisory pricing adjustments for every zone
+  const zonePricingAdvisories = city.zones.map((z) => {
+    const orderVolumeRatio = z.demandReqMin / 115; // normalized around 115 req/min
+    const courierSupplyRatio = z.availableCouriers / Math.max(1, z.demandReqMin * 1.65);
+    const predictedDeliveryMin = z.medianSlaMinutes;
+    const slaExcessMin = Math.max(0, predictedDeliveryMin - 25); // 25m target SLA
+
+    // Compute optimal suggested multiplier from the 3 real-time factors
+    const availabilityComponent =
+      courierSupplyRatio < 1.0 ? +((1.0 - courierSupplyRatio) * 0.65).toFixed(2) : -0.08;
+    const volumeComponent =
+      orderVolumeRatio > 1.0 ? +((orderVolumeRatio - 1.0) * 0.45).toFixed(2) : 0;
+    const predictedSlaComponent = +(slaExcessMin * 0.035).toFixed(2);
+
+    const rawSuggested = +(1.0 + availabilityComponent + volumeComponent + predictedSlaComponent).toFixed(2);
+    const boundedSuggested = Math.max(0.9, Math.min(enforceCeiling ? 2.5 : 3.2, rawSuggested));
+
+    const baseOrderFee = 8.25;
+    const suggestedFeeUsd = +(baseOrderFee * boundedSuggested).toFixed(2);
+    const projectedSlaImprovementMin =
+      boundedSuggested > 1.05
+        ? -Math.min(slaExcessMin * 0.65, (boundedSuggested - 1.0) * 6.5).toFixed(1)
+        : 0;
+
+    const decision = zoneOperatorDecisions[z.id] || {
+      status: 'PENDING_OPERATOR_APPROVAL' as const,
+    };
+
+    return {
+      zone: z,
+      courierAvailability: z.availableCouriers,
+      orderVolumeReqMin: z.demandReqMin,
+      activeOrders: z.activeOrders,
+      predictedDeliveryMin,
+      availabilityComponent,
+      volumeComponent,
+      predictedSlaComponent,
+      suggestedMultiplier: boundedSuggested,
+      suggestedFeeUsd,
+      projectedSlaImprovementMin,
+      decision,
+    };
+  });
+
+  const handleOperatorPricingDecision = (
+    zoneId: string,
+    action: 'APPROVED' | 'MODIFIED_APPROVED' | 'REJECTED_HOLD_BASELINE',
+    suggestedMult: number
+  ) => {
+    const targetZone = city.zones.find((z) => z.id === zoneId) || selectedZone;
+    const finalMultiplier =
+      action === 'REJECTED_HOLD_BASELINE'
+        ? 1.0
+        : action === 'MODIFIED_APPROVED' && customMultiplierOverride !== null
+        ? customMultiplierOverride
+        : suggestedMult;
+
+    const timestamp = new Date().toISOString();
+    setZoneOperatorDecisions((prev) => ({
+      ...prev,
+      [zoneId]: {
+        status: action,
+        approvedMultiplier: finalMultiplier,
+        operatorNote: operatorNoteInput,
+        decidedAt: timestamp.slice(11, 19) + ' UTC',
+      },
+    }));
+
+    // Also append to the immutable pricing audit ledger
+    const newQuoteId = `OP-ADV-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newTotal = +(8.25 * finalMultiplier).toFixed(2);
+    const newLog: PricingAuditLog = {
+      auditId: `PRC-OP-${Math.floor(10000 + Math.random() * 90000)}`,
+      quoteId: newQuoteId,
+      zoneId: targetZone.id,
+      timestamp,
+      demandRate: targetZone.demandReqMin,
+      couriersAvail: targetZone.availableCouriers,
+      imbalancePct: targetZone.imbalancePct,
+      surgeMultiplier: finalMultiplier,
+      totalCustomerPrice: newTotal,
+      courierSharePct: finalMultiplier > 1.0 ? 82 : 75,
+      policyVersion: 'POL-ADVISORY-PRICING-HITL-V3',
+      evidenceHash: `sha256:op-${targetZone.id.toLowerCase()}-${finalMultiplier.toFixed(2)}-${Date.now()
+        .toString(16)
+        .slice(-6)}`,
+      guardianCompliance:
+        action === 'REJECTED_HOLD_BASELINE'
+          ? 'COMPLIANT'
+          : finalMultiplier >= 2.5
+          ? 'CEILING_ENFORCED'
+          : 'COMPLIANT',
+    };
+    setPricingLogs((prev) => [newLog, ...prev]);
+    setJustLoggedQuoteId(`${newQuoteId} (${zoneId}: ${action})`);
+    setTimeout(() => setJustLoggedQuoteId(null), 3500);
+  };
 
   // Dynamic calculations
   const baseFareUsd = 3.5;
@@ -128,6 +249,257 @@ export const DynamicPricingModule: React.FC<DynamicPricingModuleProps> = ({ city
           </span>
         </div>
       </div>
+
+      {/* Real-Time Zone Pricing Advisory & Operator Approval Console */}
+      <div className="bg-neutral-900/85 border border-neutral-800 rounded-xl p-5 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-neutral-800">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 font-mono text-[10px] font-bold flex items-center gap-1">
+                <Lock className="w-3 h-3" />
+                {isThai
+                  ? 'โหมดให้คำแนะนำเท่านั้น • ห้ามปรับราคาอัตโนมัติโดยไม่มีมนุษย์อนุมัติ'
+                  : 'ADVISORY-ONLY MODE • AUTO-EXECUTION BLOCKED'}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono text-[10px]">
+                POL-ADVISORY-PRICING-HITL-V3
+              </span>
+            </div>
+            <h3 className="text-base font-bold text-white mt-1">
+              {isThai
+                ? `คิวอนุมัติการปรับราคาพลวัตรายโซนสำหรับผู้ควบคุม (Operator Pricing Approval Queue) — ${city.cityName}`
+                : `Real-Time Zone Pricing Advisory & Operator Approval Queue — ${city.cityName}`}
+            </h3>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              {isThai
+                ? 'วิเคราะห์ 3 ปัจจัยแบบเรียลไทม์ ได้แก่ (1) ความพร้อมของไรเดอร์ (2) ปริมาณคำสั่งซื้อต่อโซน และ (3) เวลาจัดส่งที่คาดการณ์ (Predicted SLA) เพื่อเสนอแนะตัวคูณราคาที่เหมาะสมที่สุดให้ผู้ควบคุมพิจารณาอนุมัติ'
+                : 'Continuously evaluates (1) Courier Availability, (2) Order Volume per Zone, and (3) Predicted Delivery Times (SLA) to recommend optimal zone pricing adjustments for human operator approval.'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-start">
+            <button
+              onClick={() =>
+                onNavigateToGovernance({
+                  source: 'DYNAMIC_PRICING_OPERATOR_QUEUE',
+                  zone: selectedZone.id,
+                  imbalance: selectedZone.imbalancePct,
+                  demand: selectedZone.demandReqMin,
+                  couriers: selectedZone.availableCouriers,
+                })
+              }
+              className="px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-cyan-300 font-mono text-xs flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <span>{isThai ? 'ส่งตรวจสอบที่ AEON Guardian' : 'Escalate to AEON Guardian'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Zone Advisory Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono">
+            <thead>
+              <tr className="border-b border-neutral-800 text-neutral-400 text-[10px] uppercase">
+                <th className="pb-2">{isThai ? 'โซนปฏิบัติการ' : 'Zone'}</th>
+                <th className="pb-2 text-right">{isThai ? 'ไรเดอร์ที่พร้อม' : 'Courier Avail'}</th>
+                <th className="pb-2 text-right">{isThai ? 'ปริมาณออเดอร์' : 'Order Volume'}</th>
+                <th className="pb-2 text-right">{isThai ? 'เวลาส่งคาดการณ์' : 'Predicted SLA'}</th>
+                <th className="pb-2 text-right text-cyan-400">
+                  {isThai ? 'ตัวคูณที่แนะนำ' : 'Advisory Multiplier'}
+                </th>
+                <th className="pb-2 text-right">{isThai ? 'ค่าส่งที่แนะนำ' : 'Suggested Fee'}</th>
+                <th className="pb-2 text-center">{isThai ? 'สถานะการอนุมัติ' : 'Operator Status'}</th>
+                <th className="pb-2 text-right">{isThai ? 'การตัดสินใจของผู้ควบคุม' : 'Operator Action'}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800/60">
+              {zonePricingAdvisories.map((item) => {
+                const isSelected = item.zone.id === selectedZoneId;
+                const status = item.decision.status;
+                return (
+                  <tr
+                    key={item.zone.id}
+                    onClick={() => setSelectedZoneId(item.zone.id)}
+                    className={`transition cursor-pointer ${
+                      isSelected ? 'bg-cyan-950/25 text-white' : 'hover:bg-neutral-900/60 text-neutral-300'
+                    }`}
+                  >
+                    <td className="py-3">
+                      <div className="font-bold text-white">{item.zone.id}</div>
+                      <div className="text-[10px] text-neutral-500 font-sans">{item.zone.name}</div>
+                    </td>
+                    <td className="py-3 text-right">
+                      <div className="text-cyan-400 font-bold">{item.courierAvailability} drv</div>
+                      <div className="text-[10px] text-neutral-500">
+                        {item.availabilityComponent >= 0
+                          ? `+${item.availabilityComponent}x deficit`
+                          : `${item.availabilityComponent}x surplus`}
+                      </div>
+                    </td>
+                    <td className="py-3 text-right">
+                      <div className="text-white font-semibold">{item.orderVolumeReqMin} req/m</div>
+                      <div className="text-[10px] text-neutral-500">
+                        {item.activeOrders} active (+{item.volumeComponent}x)
+                      </div>
+                    </td>
+                    <td className="py-3 text-right">
+                      <div
+                        className={`font-bold ${
+                          item.predictedDeliveryMin > 30
+                            ? 'text-rose-400'
+                            : item.predictedDeliveryMin > 25
+                            ? 'text-amber-400'
+                            : 'text-emerald-400'
+                        }`}
+                      >
+                        {item.predictedDeliveryMin} min
+                      </div>
+                      <div className="text-[10px] text-neutral-500">
+                        Target 25m (+{item.predictedSlaComponent}x)
+                      </div>
+                    </td>
+                    <td className="py-3 text-right">
+                      <span
+                        className={`px-2 py-0.5 rounded font-bold text-xs ${
+                          item.suggestedMultiplier >= 1.5
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            : item.suggestedMultiplier > 1.05
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : item.suggestedMultiplier < 1.0
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        }`}
+                      >
+                        {item.suggestedMultiplier.toFixed(2)}x
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      <div className="text-emerald-400 font-bold">${item.suggestedFeeUsd.toFixed(2)}</div>
+                      <div className="text-[10px] text-neutral-500">
+                        {item.projectedSlaImprovementMin < 0
+                          ? `${item.projectedSlaImprovementMin}m SLA est.`
+                          : 'Baseline SLA'}
+                      </div>
+                    </td>
+                    <td className="py-3 text-center">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          status === 'APPROVED' || status === 'MODIFIED_APPROVED'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : status === 'REJECTED_HOLD_BASELINE'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                        }`}
+                      >
+                        {status === 'PENDING_OPERATOR_APPROVAL'
+                          ? isThai
+                            ? 'รออนุมัติ (1.00x คงเดิม)'
+                            : 'AWAITING OPERATOR (1.00x ACTIVE)'
+                          : status === 'REJECTED_HOLD_BASELINE'
+                          ? isThai
+                            ? 'ปฏิเสธ (คงค่า 1.00x)'
+                            : 'REJECTED (HELD 1.00x)'
+                          : `${status} (${item.decision.approvedMultiplier?.toFixed(2)}x)`}
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      <div
+                        className="flex items-center justify-end gap-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() =>
+                            handleOperatorPricingDecision(
+                              item.zone.id,
+                              'APPROVED',
+                              item.suggestedMultiplier
+                            )
+                          }
+                          className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition cursor-pointer"
+                        >
+                          {isThai ? 'อนุมัติ' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleOperatorPricingDecision(
+                              item.zone.id,
+                              'REJECTED_HOLD_BASELINE',
+                              item.suggestedMultiplier
+                            )
+                          }
+                          className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-rose-950/80 border border-neutral-700 hover:border-rose-500/40 text-neutral-300 hover:text-rose-300 text-[10px] transition cursor-pointer"
+                        >
+                          {isThai ? 'คงราคา 1.0x' : 'Hold 1.0x'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Operator Custom Override & Rationale Bar */}
+        <div className="bg-neutral-950 p-3.5 rounded-lg border border-neutral-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex-1 space-y-1">
+            <label className="text-[10px] font-mono text-neutral-400 uppercase block">
+              {isThai
+                ? `บันทึกเหตุผลของผู้ควบคุมสำหรับโซน ${selectedZone.id}:`
+                : `Operator Attestation Rationale for Zone ${selectedZone.id}:`}
+            </label>
+            <input
+              type="text"
+              value={operatorNoteInput}
+              onChange={(e) => setOperatorNoteInput(e.target.value)}
+              className="w-full bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 self-end">
+            <div className="font-mono text-xs">
+              <label className="text-[10px] text-neutral-400 block">
+                {isThai ? 'กำหนดตัวคูณเอง:' : 'Custom Override:'}
+              </label>
+              <input
+                type="number"
+                min={0.85}
+                max={2.5}
+                step={0.05}
+                value={
+                  customMultiplierOverride ??
+                  (zonePricingAdvisories.find((a) => a.zone.id === selectedZoneId)
+                    ?.suggestedMultiplier || 1.25)
+                }
+                onChange={(e) => setCustomMultiplierOverride(Number(e.target.value))}
+                className="w-24 bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-xs font-mono text-cyan-400 font-bold"
+              />
+            </div>
+
+            <button
+              onClick={() => {
+                const adv = zonePricingAdvisories.find((a) => a.zone.id === selectedZoneId);
+                handleOperatorPricingDecision(
+                  selectedZone.id,
+                  'MODIFIED_APPROVED',
+                  adv ? adv.suggestedMultiplier : 1.25
+                );
+              }}
+              className="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-mono font-bold transition cursor-pointer mt-3.5"
+            >
+              {isThai ? 'อนุมัติด้วยค่าที่แก้ไข' : 'Approve Custom Override'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Conceptual 4-Factor Dynamic Pricing Model & Worked Examples */}
+      <ConceptualDynamicPricing
+        city={city}
+        selectedZone={selectedZone}
+        onNavigateToGovernance={onNavigateToGovernance}
+      />
 
       {/* Main Grid: Parameters & Calculations vs Live Price Quote */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

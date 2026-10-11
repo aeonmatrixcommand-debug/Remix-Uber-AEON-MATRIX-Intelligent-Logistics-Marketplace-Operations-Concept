@@ -15,6 +15,9 @@ import {
   Star,
   TrendingUp,
   Mail,
+  History,
+  Users,
+  Gauge,
 } from 'lucide-react';
 import { CITIES_DATA } from '../data/mockData';
 import { useLanguage } from '../context/LanguageContext';
@@ -40,6 +43,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const navigationTabs = [
     { id: 'marketplace', label: t.tabMarketplace, icon: Activity },
+    { id: 'demand_forecast', label: language === 'th' ? 'พยากรณ์คำสั่งซื้อ 24 ชม.' : '24h Demand Forecast', icon: TrendingUp },
+    { id: 'performance_monitor', label: t.tabPerformanceMonitor, icon: Gauge },
+    { id: 'capacity_planner', label: t.tabCapacityPlanner, icon: Users },
     { id: 'pricing', label: t.tabPricing, icon: DollarSign },
     { id: 'fulfillment', label: t.tabFulfillment, icon: Layers },
     { id: 'feedback', label: t.tabFeedback, icon: Star },
@@ -47,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'gmail_alerts', label: t.tabGmailDispatch, icon: Mail },
     { id: 'routing', label: t.tabRouting, icon: Cpu },
     { id: 'governance', label: t.tabGovernance, icon: Lock },
+    { id: 'audit_logs', label: t.tabAuditLogs, icon: History },
     { id: 'architecture', label: t.tabArchitecture, icon: Server },
     { id: 'contributions', label: t.tabContributions, icon: CheckCircle2 },
     { id: 'uber_problem', label: t.tabUberProblem, icon: Info },
@@ -71,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-mono transition cursor-pointer font-bold"
               >
                 <Info className="w-3 h-3 text-cyan-400" />
-                Showcase Tour
+                {language === 'th' ? 'แนะนำระบบ (Tour)' : 'Showcase Tour'}
               </button>
             )}
 

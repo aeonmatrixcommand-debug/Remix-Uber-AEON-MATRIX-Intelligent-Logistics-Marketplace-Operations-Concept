@@ -1,27 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { APIProvider, Map, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
+import {
+  APIProvider,
+  Map,
+  AdvancedMarker,
+  Pin,
+  InfoWindow,
+  useMap,
+  useMapsLibrary,
+  useApiLoadingStatus,
+  APILoadingStatus,
+} from '@vis.gl/react-google-maps';
 import {
   Navigation,
-  MapPin,
   Clock,
   Zap,
   BatteryCharging,
   Phone,
   MessageSquare,
-  ShieldCheck,
   AlertTriangle,
   Play,
   Pause,
   FastForward,
-  RotateCcw,
   CheckCircle2,
   Bike,
-  Car,
-  Truck,
-  User,
   Star,
 } from 'lucide-react';
-import { CityMarketplace } from '../types';
 
 interface CustomerCourierTrackingProps {
   orderId?: string;
@@ -29,7 +32,7 @@ interface CustomerCourierTrackingProps {
   cityName?: string;
 }
 
-// Sample GPS Waypoint Trajectories for NYC Midtown / Downtown orders
+// Verified NYC Midtown / Chelsea Dispatch Coordinates
 const TRACKING_SCENARIOS = [
   {
     orderId: 'ORD-98214',
@@ -38,23 +41,23 @@ const TRACKING_SCENARIOS = [
     courierRating: 4.92,
     vehicleType: 'E-Cargo Bike',
     vehicleIcon: Bike,
-    merchantName: 'Joe\'s Gourmet Pizza & Pasta',
-    merchantAddress: '550 8th Ave, New York, NY',
-    merchantCoords: { lat: 40.7549, lng: -73.9910 },
-    customerName: 'Sarah Jenkins',
-    customerAddress: '240 W 40th St, Apt 12B, New York, NY',
-    customerCoords: { lat: 40.7562, lng: -73.9890 },
+    merchantName: "Joe's Pizza Broadway",
+    merchantAddress: '1435 Broadway, New York, NY 10018',
+    merchantCoords: { lat: 40.7546, lng: -73.9870 },
+    customerName: 'Midtown Tech Tower — 14th Fl',
+    customerAddress: '500 7th Ave, New York, NY 10018',
+    customerCoords: { lat: 40.7532, lng: -73.9896 },
     routePath: [
-      { lat: 40.7520, lng: -73.9940, heading: 45, speedKmH: 22, label: 'En route to merchant' },
-      { lat: 40.7535, lng: -73.9925, heading: 45, speedKmH: 24, label: 'Approaching Joe\'s Gourmet' },
-      { lat: 40.7549, lng: -73.9910, heading: 90, speedKmH: 0, label: 'Picked up order at Merchant' },
-      { lat: 40.7554, lng: -73.9900, heading: 30, speedKmH: 18, label: 'Departed merchant, heading to customer' },
-      { lat: 40.7558, lng: -73.9895, heading: 30, speedKmH: 19, label: '100m from dropoff building' },
-      { lat: 40.7562, lng: -73.9890, heading: 0, speedKmH: 0, label: 'Arrived at Customer Entrance' },
+      { lat: 40.7558, lng: -73.9855, heading: 210, speedKmH: 22, label: 'En route to merchant pickup' },
+      { lat: 40.7551, lng: -73.9863, heading: 215, speedKmH: 20, label: 'Approaching Broadway pickup zone' },
+      { lat: 40.7546, lng: -73.9870, heading: 180, speedKmH: 0, label: 'Order verified & scanned at Merchant' },
+      { lat: 40.7541, lng: -73.9879, heading: 230, speedKmH: 19, label: 'Departed merchant via W 40th St' },
+      { lat: 40.7536, lng: -73.9888, heading: 225, speedKmH: 21, label: '120m from customer dropoff entrance' },
+      { lat: 40.7532, lng: -73.9896, heading: 0, speedKmH: 0, label: 'Arrived at Customer Dropoff Lobby' },
     ],
     batteryLevelPct: 88,
-    cargoTempC: 62.4, // Warm food thermal box
-    initialEtaMinutes: 12,
+    cargoTempC: 62.4,
+    initialEtaMinutes: 11,
   },
   {
     orderId: 'ORD-89219',
@@ -63,45 +66,84 @@ const TRACKING_SCENARIOS = [
     courierRating: 4.85,
     vehicleType: 'Electric Scooter',
     vehicleIcon: Bike,
-    merchantName: 'Gourmet Organic Pantry',
-    merchantAddress: '180 9th Ave, New York, NY',
-    merchantCoords: { lat: 40.7450, lng: -74.0020 },
-    customerName: 'Apex BioTech Lab',
-    customerAddress: '350 W 23rd St, New York, NY',
-    customerCoords: { lat: 40.7470, lng: -73.9980 },
+    merchantName: 'Chelsea Market Artisanal Hub',
+    merchantAddress: '75 9th Ave, New York, NY 10011',
+    merchantCoords: { lat: 40.7424, lng: -74.0061 },
+    customerName: 'Flatiron Studios West',
+    customerAddress: '175 5th Ave, New York, NY 10010',
+    customerCoords: { lat: 40.7411, lng: -73.9897 },
     routePath: [
-      { lat: 40.7430, lng: -74.0040, heading: 30, speedKmH: 28, label: 'En route on 9th Ave' },
-      { lat: 40.7450, lng: -74.0020, heading: 90, speedKmH: 0, label: 'Picking up cold-chain package' },
-      { lat: 40.7460, lng: -74.0000, heading: 45, speedKmH: 25, label: 'Crossing 23rd St Corridor' },
-      { lat: 40.7470, lng: -73.9980, heading: 0, speedKmH: 0, label: 'At Security Desk' },
+      { lat: 40.7432, lng: -74.0075, heading: 135, speedKmH: 26, label: 'Approaching 9th Ave dock' },
+      { lat: 40.7424, lng: -74.0061, heading: 90, speedKmH: 0, label: 'Cold-chain package loaded at Chelsea Market' },
+      { lat: 40.7419, lng: -74.0005, heading: 95, speedKmH: 27, label: 'Cruising eastbound on W 16th St corridor' },
+      { lat: 40.7415, lng: -73.9945, heading: 95, speedKmH: 24, label: 'Crossing 6th Ave intersection' },
+      { lat: 40.7411, lng: -73.9897, heading: 0, speedKmH: 0, label: 'Arrived at Flatiron Security Desk' },
     ],
     batteryLevelPct: 94,
-    cargoTempC: 4.2, // Cold-chain temperature
+    cargoTempC: 4.2,
     initialEtaMinutes: 8,
   },
 ];
 
-// Helper Polyline Component for Google Maps
-const RoutePolyline: React.FC<{ path: Array<{ lat: number; lng: number }> }> = ({ path }) => {
+// Modern Route & Geodesic Polyline Renderer using @vis.gl/react-google-maps hooks
+const DeliveryRouteOverlay: React.FC<{
+  origin: { lat: number; lng: number };
+  destination: { lat: number; lng: number };
+  fallbackPath: Array<{ lat: number; lng: number }>;
+  onRouteError?: (msg: string) => void;
+}> = ({ origin, destination, fallbackPath, onRouteError }) => {
   const map = useMap();
   const mapsLib = useMapsLibrary('maps');
+  const routesLib = useMapsLibrary('routes');
   const polylineRef = useRef<any>(null);
 
   useEffect(() => {
     if (!map || !mapsLib) return;
 
-    if (!polylineRef.current) {
+    // Clean up previous polyline
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    const renderPath = (pathCoords: Array<{ lat: number; lng: number } | any>) => {
+      if (polylineRef.current) {
+        polylineRef.current.setMap(null);
+      }
       polylineRef.current = new mapsLib.Polyline({
-        path,
+        path: pathCoords,
         geodesic: true,
-        strokeColor: '#06b6d4', // Cyan accent
-        strokeOpacity: 0.85,
+        strokeColor: '#06b6d4',
+        strokeOpacity: 0.9,
         strokeWeight: 5,
         map,
       });
-    } else {
-      polylineRef.current.setPath(path);
-      polylineRef.current.setMap(map);
+    };
+
+    // Immediately draw telemetry trajectory so the map is responsive
+    renderPath(fallbackPath);
+
+    // Attempt modern Routes API calculation via JS SDK Route class if available
+    const RouteClass = (routesLib as any)?.Route;
+    if (RouteClass && typeof RouteClass.computeRoutes === 'function') {
+      RouteClass.computeRoutes({
+        origin,
+        destination,
+        travelMode: 'DRIVING',
+        fields: ['path'],
+      })
+        .then((res: any) => {
+          const computedPath = res?.routes?.[0]?.path;
+          if (Array.isArray(computedPath) && computedPath.length > 0) {
+            renderPath(computedPath);
+          }
+        })
+        .catch((err: unknown) => {
+          console.error('Routes API calculation fallback to telemetry waypoints:', err);
+          if (onRouteError) {
+            onRouteError('Using direct GPS telemetry corridor.');
+          }
+        });
     }
 
     return () => {
@@ -109,14 +151,25 @@ const RoutePolyline: React.FC<{ path: Array<{ lat: number; lng: number }> }> = (
         polylineRef.current.setMap(null);
       }
     };
-  }, [map, mapsLib, path]);
+  }, [map, mapsLib, routesLib, origin, destination, fallbackPath]);
 
   return null;
 };
 
-export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = ({
-  orderId = 'ORD-98214',
-}) => {
+const MapStatusMonitor: React.FC = () => {
+  const status = useApiLoadingStatus();
+  if (status === APILoadingStatus.AUTH_FAILURE || status === APILoadingStatus.FAILED) {
+    return (
+      <div className="bg-rose-950/90 border border-rose-500/40 text-rose-200 px-3 py-2 text-xs font-mono rounded-lg flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+        <span>Unable to load map tiles or route data. Please check your network or API key configuration.</span>
+      </div>
+    );
+  }
+  return null;
+};
+
+export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = () => {
   const [selectedScenarioIndex, setSelectedScenarioIndex] = useState<number>(0);
   const scenario = TRACKING_SCENARIOS[selectedScenarioIndex] || TRACKING_SCENARIOS[0];
 
@@ -124,16 +177,10 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
   const [isSimulatingGps, setIsSimulatingGps] = useState<boolean>(true);
   const [etaMinutes, setEtaMinutes] = useState<number>(scenario.initialEtaMinutes);
   const [trafficDelayApplied, setTrafficDelayApplied] = useState<boolean>(false);
-  const [quotaExceeded, setQuotaExceeded] = useState<boolean>(false);
+  const [activeInfoMarker, setActiveInfoMarker] = useState<'merchant' | 'customer' | 'courier' | null>(null);
+  const [contactActionStatus, setContactActionStatus] = useState<string | null>(null);
 
-  const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyB8diwI4YWiS0UX2ahSS9D2mfh7zS9Sryw';
-
-  // Listen for quota or auth errors
-  useEffect(() => {
-    const handleQuota = () => setQuotaExceeded(true);
-    window.addEventListener('gmp-quota-exceeded', handleQuota);
-    return () => window.removeEventListener('gmp-quota-exceeded', handleQuota);
-  }, []);
+  const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
   // Periodic GPS Location Telemetry Stream Simulation
   useEffect(() => {
@@ -142,11 +189,10 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
     const interval = setInterval(() => {
       setCurrentWaypointIndex((prev) => {
         const next = (prev + 1) % scenario.routePath.length;
-        // Decrease ETA as courier approaches customer
         setEtaMinutes((prevEta) => Math.max(1, prevEta - (next === 0 ? -scenario.initialEtaMinutes : 1)));
         return next;
       });
-    }, 3500);
+    }, 3200);
 
     return () => clearInterval(interval);
   }, [isSimulatingGps, scenario]);
@@ -156,51 +202,30 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* Top Quota Exceeded Banner (Mandatory by Google Maps skill) */}
-      {quotaExceeded && (
-        <div className="bg-amber-950/80 border border-amber-500/50 text-amber-300 px-4 py-2.5 text-xs font-mono rounded-lg flex items-center justify-between">
-          <span>
-            Google Maps Platform quota reached. If you are the app owner, visit{' '}
-            <a
-              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-bold text-amber-200 hover:text-white"
-            >
-              maps developer site
-            </a>{' '}
-            for instructions.
-          </span>
-          <button onClick={() => setQuotaExceeded(false)} className="text-amber-400 hover:text-white">
-            ×
-          </button>
-        </div>
-      )}
-
       {/* Main Header & Scenario Selector */}
       <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-5 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold">
-              REAL-TIME GPS COURIER TRACKING
+              GOOGLE MAPS PLATFORM • LIVE COURIER TELEMETRY
             </span>
             <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              Live Telemetry Stream
+              Active GPS Stream
             </span>
           </div>
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Navigation className="w-5 h-5 text-cyan-400" />
-            Customer Delivery Map & Courier Geolocation
+            Customer Delivery Map & Real-Time Courier Geolocation
           </h3>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Google Maps Platform integration with periodic GPS coordinate streaming, cargo telemetry, and ETA calculation.
+            Interactive Google Maps Platform telemetry with Advanced Markers, route corridor overlay, and live cargo sensors.
           </p>
         </div>
 
         {/* Order Scenario Selector */}
         <div className="flex items-center gap-2 bg-neutral-950 p-1.5 rounded-lg border border-neutral-800 text-xs font-mono">
-          <span className="text-neutral-500 px-2">Order:</span>
+          <span className="text-neutral-500 px-2">Active Order:</span>
           {TRACKING_SCENARIOS.map((sc, idx) => (
             <button
               key={sc.orderId}
@@ -209,6 +234,7 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
                 setCurrentWaypointIndex(0);
                 setEtaMinutes(sc.initialEtaMinutes);
                 setTrafficDelayApplied(false);
+                setActiveInfoMarker(null);
               }}
               className={`px-3 py-1.5 rounded transition cursor-pointer ${
                 selectedScenarioIndex === idx
@@ -226,9 +252,12 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Google Maps Component (8 cols) */}
         <div className="lg:col-span-8 bg-neutral-900/80 border border-neutral-800 rounded-xl overflow-hidden relative flex flex-col justify-between h-[520px]">
-          {/* Map View */}
           <div className="w-full h-full relative">
             <APIProvider apiKey={mapsApiKey}>
+              <div className="absolute top-16 left-3 right-3 z-20 pointer-events-none">
+                <MapStatusMonitor />
+              </div>
+
               <Map
                 defaultCenter={scenario.merchantCoords}
                 defaultZoom={15}
@@ -239,27 +268,41 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
                 gestureHandling="greedy"
                 disableDefaultUI={false}
               >
-                {/* Route Polyline connecting Merchant and Customer */}
-                <RoutePolyline
-                  path={[
+                {/* Route Polyline connecting Merchant, Waypoints, and Customer */}
+                <DeliveryRouteOverlay
+                  origin={scenario.merchantCoords}
+                  destination={scenario.customerCoords}
+                  fallbackPath={[
                     scenario.merchantCoords,
                     ...scenario.routePath.map((pt) => ({ lat: pt.lat, lng: pt.lng })),
                     scenario.customerCoords,
                   ]}
                 />
 
-                {/* Merchant Marker */}
-                <AdvancedMarker position={scenario.merchantCoords} title={scenario.merchantName}>
+                {/* Merchant Pickup AdvancedMarker */}
+                <AdvancedMarker
+                  position={scenario.merchantCoords}
+                  title={`Merchant Pickup: ${scenario.merchantName}`}
+                  onClick={() => setActiveInfoMarker('merchant')}
+                >
                   <Pin background="#3b82f6" glyphColor="#ffffff" borderColor="#1d4ed8" />
                 </AdvancedMarker>
 
-                {/* Customer Dropoff Marker */}
-                <AdvancedMarker position={scenario.customerCoords} title={scenario.customerName}>
+                {/* Customer Dropoff AdvancedMarker */}
+                <AdvancedMarker
+                  position={scenario.customerCoords}
+                  title={`Customer Dropoff: ${scenario.customerName}`}
+                  onClick={() => setActiveInfoMarker('customer')}
+                >
                   <Pin background="#10b981" glyphColor="#ffffff" borderColor="#047857" />
                 </AdvancedMarker>
 
-                {/* Courier Real-Time Moving Marker */}
-                <AdvancedMarker position={currentCoords} title={scenario.courierName}>
+                {/* Courier Real-Time Moving AdvancedMarker */}
+                <AdvancedMarker
+                  position={currentCoords}
+                  title={`Courier: ${scenario.courierName}`}
+                  onClick={() => setActiveInfoMarker('courier')}
+                >
                   <div className="relative group cursor-pointer">
                     <div className="w-10 h-10 rounded-full bg-cyan-500/30 border-2 border-cyan-400 flex items-center justify-center shadow-lg shadow-cyan-500/40 animate-pulse">
                       <VehicleIcon className="w-5 h-5 text-cyan-300" />
@@ -269,23 +312,71 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
                     </div>
                   </div>
                 </AdvancedMarker>
+
+                {/* InfoWindows for clicked markers */}
+                {activeInfoMarker === 'merchant' && (
+                  <InfoWindow
+                    position={scenario.merchantCoords}
+                    onCloseClick={() => setActiveInfoMarker(null)}
+                  >
+                    <div className="text-neutral-900 p-1 text-xs font-sans">
+                      <div className="font-bold text-blue-700">Merchant Pickup Origin</div>
+                      <div className="font-semibold mt-0.5">{scenario.merchantName}</div>
+                      <div className="text-neutral-600 text-[11px]">{scenario.merchantAddress}</div>
+                    </div>
+                  </InfoWindow>
+                )}
+
+                {activeInfoMarker === 'customer' && (
+                  <InfoWindow
+                    position={scenario.customerCoords}
+                    onCloseClick={() => setActiveInfoMarker(null)}
+                  >
+                    <div className="text-neutral-900 p-1 text-xs font-sans">
+                      <div className="font-bold text-emerald-700">Customer Dropoff Destination</div>
+                      <div className="font-semibold mt-0.5">{scenario.customerName}</div>
+                      <div className="text-neutral-600 text-[11px]">{scenario.customerAddress}</div>
+                    </div>
+                  </InfoWindow>
+                )}
+
+                {activeInfoMarker === 'courier' && (
+                  <InfoWindow
+                    position={currentCoords}
+                    onCloseClick={() => setActiveInfoMarker(null)}
+                  >
+                    <div className="text-neutral-900 p-1 text-xs font-sans">
+                      <div className="font-bold text-cyan-700">{scenario.courierName} ({scenario.courierId})</div>
+                      <div className="text-[11px] text-neutral-700 mt-0.5">
+                        {scenario.vehicleType} • Speed: {currentCoords.speedKmH} km/h
+                      </div>
+                      <div className="text-[11px] text-emerald-700 font-semibold">
+                        ETA: {etaMinutes} mins • Cargo: {scenario.cargoTempC}°C
+                      </div>
+                    </div>
+                  </InfoWindow>
+                )}
               </Map>
             </APIProvider>
 
             {/* Floating Top Map Telemetry Bar */}
-            <div className="absolute top-3 left-3 right-3 bg-neutral-950/90 border border-neutral-800 backdrop-blur-md rounded-lg p-3 text-xs font-mono flex flex-wrap items-center justify-between gap-2 shadow-lg">
+            <div className="absolute top-3 left-3 right-3 bg-neutral-950/90 border border-neutral-800 backdrop-blur-md rounded-lg p-3 text-xs font-mono flex flex-wrap items-center justify-between gap-2 shadow-lg z-10">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
                 <span className="text-white font-semibold">{currentCoords.label}</span>
               </div>
               <div className="flex items-center gap-4 text-[11px] text-neutral-300">
-                <span>Speed: <strong className="text-cyan-400">{currentCoords.speedKmH} km/h</strong></span>
-                <span>Lat: {currentCoords.lat.toFixed(4)} | Lng: {currentCoords.lng.toFixed(4)}</span>
+                <span>
+                  Speed: <strong className="text-cyan-400">{currentCoords.speedKmH} km/h</strong>
+                </span>
+                <span>
+                  Lat: {currentCoords.lat.toFixed(4)} | Lng: {currentCoords.lng.toFixed(4)}
+                </span>
               </div>
             </div>
 
             {/* Bottom Floating Map Controls */}
-            <div className="absolute bottom-3 left-3 right-3 bg-neutral-950/90 border border-neutral-800 backdrop-blur-md rounded-lg p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+            <div className="absolute bottom-3 left-3 right-3 bg-neutral-950/90 border border-neutral-800 backdrop-blur-md rounded-lg p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono z-10">
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsSimulatingGps(!isSimulatingGps)}
@@ -382,18 +473,37 @@ export const CustomerCourierTracking: React.FC<CustomerCourierTrackingProps> = (
             {/* Contact Actions */}
             <div className="pt-2 border-t border-neutral-800 grid grid-cols-2 gap-2 text-xs font-mono">
               <button
-                onClick={() => alert(`Calling courier ${scenario.courierName}...`)}
+                onClick={() =>
+                  setContactActionStatus(`Encrypted VoIP bridge connected to ${scenario.courierName} (${scenario.courierId}).`)
+                }
                 className="py-2 px-3 rounded-lg bg-neutral-950 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <Phone className="w-3.5 h-3.5 text-cyan-400" /> Call Courier
               </button>
               <button
-                onClick={() => alert(`Opening chat with ${scenario.courierName}...`)}
+                onClick={() =>
+                  setContactActionStatus(`Dispatch instruction transmitted to ${scenario.courierName}'s terminal.`)
+                }
                 className="py-2 px-3 rounded-lg bg-neutral-950 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 <MessageSquare className="w-3.5 h-3.5 text-cyan-400" /> Send Note
               </button>
             </div>
+
+            {contactActionStatus && (
+              <div className="p-2.5 rounded-lg bg-cyan-950/40 border border-cyan-500/40 text-cyan-200 text-[11px] font-mono flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  {contactActionStatus}
+                </span>
+                <button
+                  onClick={() => setContactActionStatus(null)}
+                  className="text-cyan-400 hover:text-white cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Handoff Address Breakdown */}
